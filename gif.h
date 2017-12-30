@@ -938,8 +938,12 @@ bool GifWriteFrame( GifWriter* writer, const GifRGBA* image, uint32_t width, uin
     writer->firstFrame = false;
 
     GifPalette pal;
-    // mark all nodes unused
+    // mark all internal nodes unused
     memset(pal.treeSplitElt, 3, 256);
+    // Leaf nodes (palette entries) can also be unused, but we can't mark them unused because
+    // they're implicit in the tree. Avoid nondeterminism due to random palette entries.
+    memset(pal.colors, 0, sizeof(pal.colors));
+
     GifMakePalette((dither? NULL : oldImage), image, width, height, bitDepth, dither, &pal);
 
     if(dither)
