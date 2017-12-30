@@ -72,6 +72,14 @@
 
 const int kGifTransIndex = 0;
 
+// Define this to collect and print statistics about the quality of the palette
+//#define GIF_STATS(x)  x
+#define GIF_STATS(x)
+
+struct GifStats {
+    int leaves, searches, totaldiff, cols, nodes;
+} GIF_STATS(stats);
+
 // Layout of a pixel passed to GifWriteFrame. You can reorder this, but must be the same as GifRGBA32
 struct GifRGBA
 {
@@ -145,9 +153,12 @@ bool GifBetterColorMatch(const GifPalette* pPal, int ind, int r, int g, int b, i
 // this is the major hotspot in the code at the moment.
 void GifGetClosestPaletteColor(GifPalette* pPal, int r, int g, int b, int& bestInd, int& bestDiff, int treeRoot = 1)
 {
+    GIF_STATS(stats.nodes++);
+
     // base case, reached the bottom of the tree
     if(treeRoot > (1<<pPal->bitDepth)-1)
     {
+        GIF_STATS(stats.leaves++);
         int ind = treeRoot-(1<<pPal->bitDepth);
 
         // check whether this color is better than the current winner
@@ -266,6 +277,8 @@ void GifSplitPalette(GifRGBA* image, int numPixels, int firstElt, int lastElt, i
     // base case, bottom of the tree
     if(lastElt == firstElt+1)
     {
+        GIF_STATS(stats.cols++);
+
         if(buildForDither)
         {
             // Dithering needs at least one color as dark as anything
@@ -473,6 +486,8 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
 
             // Search the palete
             GifGetClosestPaletteColor(pPal, rr, gg, bb, bestInd, bestDiff);
+            GIF_STATS(stats.searches++);
+            GIF_STATS(stats.totaldiff += bestDiff);
 
             // Write the result to the temp buffer
             int32_t r_err = (int32_t)nextPix.r - int32_t(pPal->r[bestInd]) * 256;
@@ -555,7 +570,8 @@ void GifThresholdImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifR
             int32_t bestDiff = 1000000;
             int32_t bestInd = 1;
             GifGetClosestPaletteColor(pPal, nextFrame->r, nextFrame->g, nextFrame->b, bestInd, bestDiff);
-
+            GIF_STATS(stats.searches++);
+            GIF_STATS(stats.totaldiff += bestDiff);
             // Write the resulting color to the output buffer
             outFrame->r = pPal->r[bestInd];
             outFrame->g = pPal->g[bestInd];
@@ -932,6 +948,8 @@ bool GifBegin( GifWriter* writer, FILE *file, uint32_t width, uint32_t height, u
 bool GifWriteFrame( GifWriter* writer, const GifRGBA* image, uint32_t width, uint32_t height, uint32_t delay, int bitDepth = 8, bool dither = false )
 {
     if(!writer->f) return false;
+    if(bitDepth <= 0 || bitDepth > 8) return false;
+    GIF_STATS(memset(&stats, 0, sizeof stats));
 
     GifHandleSizeChange(writer, (int)width, (int)height);
     const GifRGBA* oldImage = writer->firstFrame? NULL : writer->oldImage;
@@ -951,6 +969,12 @@ bool GifWriteFrame( GifWriter* writer, const GifRGBA* image, uint32_t width, uin
         GifDitherImage(oldImage, image, writer->oldImage, width, height, &pal);
     else
         GifThresholdImage(oldImage, image, writer->oldImage, width, height, &pal);
+
+    GIF_STATS(
+        printf("avg leaves = %.3f avg nodes = %.3f average diff = %.4f selected cols = %d\n",
+               1. * stats.leaves / stats.searches, 1. * stats.nodes / stats.searches,
+               1. * stats.totaldiff / stats.searches, stats.cols)
+    );
 
     GifWriteLzwImage(writer->f, writer->oldImage, 0, 0, width, height, delay, &pal, writer->deltaCoded, true);
 
