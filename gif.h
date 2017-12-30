@@ -72,6 +72,8 @@
 
 const int kGifTransIndex = 0;
 
+const int kGifAccumMargin = 64;
+
 // Define this to collect and print statistics about the quality of the palette
 //#define GIF_STATS(x)  x
 #define GIF_STATS(x)
@@ -92,7 +94,7 @@ struct GifRGBA
 
 struct GifRGBA32
 {
-    uint32_t r, g, b, a;
+    int32_t r, g, b, a;
 };
 
 struct GifPalette
@@ -451,8 +453,7 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
     for( int ii=0; ii<numPixels*4; ++ii )
     {
         uint8_t pix = ((uint8_t*)nextFrame)[ii];
-        int32_t pix16 = int32_t(pix) * 256;
-        ((uint32_t*)quantPixels)[ii] = (uint32_t)pix16;
+        ((int32_t*)quantPixels)[ii] = int32_t(pix) * 256;
     }
 
     for( uint32_t yy=0; yy<height; ++yy )
@@ -461,6 +462,13 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
         {
             GifRGBA32& nextPix = quantPixels[yy*width+xx];
             const GifRGBA* lastPix = lastFrame? &lastFrame[yy*width+xx] : NULL;
+
+            // Cap to within reasonable bounds, to prevent excessive bleeding.
+            // But it seems permissible to keep some additional error beyond
+            // what can be corrected by a single pixel.
+            nextPix.r = GifIMin( (255 + kGifAccumMargin) * 256, GifIMax( -kGifAccumMargin, nextPix.r ) );
+            nextPix.g = GifIMin( (255 + kGifAccumMargin) * 256, GifIMax( -kGifAccumMargin, nextPix.g ) );
+            nextPix.b = GifIMin( (255 + kGifAccumMargin) * 256, GifIMax( -kGifAccumMargin, nextPix.b ) );
 
             // Compute the colors we want (rounding to nearest)
             int32_t rr = (nextPix.r + 127) / 256;
@@ -509,33 +517,33 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
             if(quantloc_7 < numPixels)
             {
                 GifRGBA32& pix7 = quantPixels[quantloc_7];
-                pix7.r += GifUI32Max( -pix7.r, (uint32_t)(r_err * 7 / 16) );
-                pix7.g += GifUI32Max( -pix7.g, (uint32_t)(g_err * 7 / 16) );
-                pix7.b += GifUI32Max( -pix7.b, (uint32_t)(b_err * 7 / 16) );
+                pix7.r += r_err * 7 / 16;
+                pix7.g += g_err * 7 / 16;
+                pix7.b += b_err * 7 / 16;
             }
 
             if(quantloc_3 < numPixels)
             {
                 GifRGBA32& pix3 = quantPixels[quantloc_3];
-                pix3.r += GifUI32Max( -pix3.r, (uint32_t)(r_err * 3 / 16) );
-                pix3.g += GifUI32Max( -pix3.g, (uint32_t)(g_err * 3 / 16) );
-                pix3.b += GifUI32Max( -pix3.b, (uint32_t)(b_err * 3 / 16) );
+                pix3.r += r_err * 3 / 16;
+                pix3.g += g_err * 3 / 16;
+                pix3.b += b_err * 3 / 16;
             }
 
             if(quantloc_5 < numPixels)
             {
                 GifRGBA32& pix5 = quantPixels[quantloc_5];
-                pix5.r += GifUI32Max( -pix5.r, (uint32_t)(r_err * 5 / 16) );
-                pix5.g += GifUI32Max( -pix5.g, (uint32_t)(g_err * 5 / 16) );
-                pix5.b += GifUI32Max( -pix5.b, (uint32_t)(b_err * 5 / 16) );
+                pix5.r += r_err * 5 / 16;
+                pix5.g += g_err * 5 / 16;
+                pix5.b += b_err * 5 / 16;
             }
 
             if(quantloc_1 < numPixels)
             {
                 GifRGBA32& pix1 = quantPixels[quantloc_1];
-                pix1.r += GifUI32Max( -pix1.r, (uint32_t)(r_err / 16) );
-                pix1.g += GifUI32Max( -pix1.g, (uint32_t)(g_err / 16) );
-                pix1.b += GifUI32Max( -pix1.b, (uint32_t)(b_err / 16) );
+                pix1.r += r_err / 16;
+                pix1.g += g_err / 16;
+                pix1.b += b_err / 16;
             }
         }
     }
@@ -543,7 +551,7 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
     // Copy the palettized result to the output buffer
     for( int ii=0; ii<numPixels*4; ++ii )
     {
-        ((uint8_t*)outFrame)[ii] = (uint8_t)((uint32_t*)quantPixels)[ii];
+        ((uint8_t*)outFrame)[ii] = (uint8_t)((int32_t*)quantPixels)[ii];
     }
 
     GIF_TEMP_FREE(quantPixels);
