@@ -211,7 +211,7 @@ void GifPartition(GifRGBA* image, int com, int &left, int &right)
     uint8_t comPivot = image[left].comps(com);
     GifRGBA rgbPivot = image[left];
     bool split = false;
-    for(int i1=left; i1<right; ++i1)
+    for(int i1=left+1; i1<right; ++i1)
     {
         uint8_t comArray = image[i1].comps(com);
         if( comArray < comPivot )
