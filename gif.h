@@ -286,43 +286,6 @@ void GifSplitPalette(GifRGBA* image, int numPixels, int firstElt, int lastElt, i
     {
         GIF_STATS(stats.cols++);
 
-        if(buildForDither)
-        {
-            // Dithering needs at least one color as dark as anything
-            // in the image and at least one brightest color -
-            // otherwise it builds up error and produces strange artifacts
-            if( firstElt == 1 )
-            {
-                // special case: the darkest color in the image
-                GifRGBA col = {255, 255, 255, 255};
-                for(int ii=0; ii<numPixels; ++ii)
-                {
-                    col.r = GifUI8Min(col.r, image[ii].r);
-                    col.g = GifUI8Min(col.g, image[ii].g);
-                    col.b = GifUI8Min(col.b, image[ii].b);
-                }
-
-                col.a = 0;
-                tree->pal.colors[firstElt] = col;
-                return;
-            }
-
-            if( firstElt == (1 << tree->pal.bitDepth)-1 )
-            {
-                // special case: the lightest color in the image
-                GifRGBA col = {0, 0, 0, 0};
-                for(int ii=0; ii<numPixels; ++ii)
-                {
-                    col.r = GifUI8Max(col.r, image[ii].r);
-                    col.g = GifUI8Max(col.g, image[ii].g);
-                    col.b = GifUI8Max(col.b, image[ii].b);
-                }
-
-                tree->pal.colors[firstElt] = col;
-                return;
-            }
-        }
-
         // otherwise, take the average of all colors in this subcube
         uint64_t r=0, g=0, b=0;
         for(int ii=0; ii<numPixels; ++ii)
