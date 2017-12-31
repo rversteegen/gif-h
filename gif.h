@@ -505,9 +505,9 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
             if(quantloc_7 < numPixels)
             {
                 GifRGBA32& pix7 = quantPixels[quantloc_7];
-                pix7.r += r_err * 7 / 16;
-                pix7.g += g_err * 7 / 16;
-                pix7.b += b_err * 7 / 16;
+                pix7.r += r_err * 6 / 16;
+                pix7.g += g_err * 6 / 16;
+                pix7.b += b_err * 6 / 16;
             }
 
             if(quantloc_3 < numPixels)
@@ -521,9 +521,9 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
             if(quantloc_5 < numPixels)
             {
                 GifRGBA32& pix5 = quantPixels[quantloc_5];
-                pix5.r += r_err * 5 / 16;
-                pix5.g += g_err * 5 / 16;
-                pix5.b += b_err * 5 / 16;
+                pix5.r += r_err * 4 / 16;
+                pix5.g += g_err * 4 / 16;
+                pix5.b += b_err * 4 / 16;
             }
 
             if(quantloc_1 < numPixels)
