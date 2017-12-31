@@ -82,10 +82,11 @@ struct GifStats {
     int leaves, searches, totaldiff, cols, nodes;
 } GIF_STATS(stats);
 
-// Layout of a pixel passed to GifWriteFrame. You can reorder this, but must be the same as GifRGBA32
+// Layout of a pixel for GifWriteFrame. You can reorder this, but must be the same as GifRGBA32.
 struct GifRGBA
 {
     uint8_t r, g, b, a;
+
     uint8_t& comps(int comp)
     {
         return ((uint8_t*)this)[comp];
@@ -101,9 +102,8 @@ struct GifPalette
 {
     int bitDepth;
 
-    uint8_t r[256];
-    uint8_t g[256];
-    uint8_t b[256];
+    // alpha component should be set to 0
+    GifRGBA colors[256];
 
     // (The following do not need to be initialised when passed to GifBegin() and GifWriteFrame8().)
     // k-d tree over RGB space, organized in heap fashion
@@ -116,8 +116,8 @@ struct GifPalette
 // max, min, and abs functions
 int GifIMax(int l, int r) { return l>r?l:r; }
 int GifIMin(int l, int r) { return l<r?l:r; }
-uint32_t GifUI32Max(uint32_t l, uint32_t r) { return l > r ? l : r; }
-uint32_t GifUI32Min(uint32_t l, uint32_t r) { return l < r ? l : r; }
+uint8_t GifUI8Max(uint8_t l, uint8_t r) { return l>r?l:r; }
+uint8_t GifUI8Min(uint8_t l, uint8_t r) { return l<r?l:r; }
 int GifIAbs(int i) { return i<0?-i:i; }
 
 bool GifRGBEqual( GifRGBA pixA, GifRGBA pixB )
@@ -125,23 +125,21 @@ bool GifRGBEqual( GifRGBA pixA, GifRGBA pixB )
     return pixA.r == pixB.r && pixA.g == pixB.g && pixA.b == pixB.b;
 }
 
-// Check if two palettes are equal
+// Check if two palettes have the same colours (k-d tree stuff ignored)
 bool GifPalettesEqual( const GifPalette* pPal1, const GifPalette* pPal2 )
 {
-    if( pPal1->bitDepth != pPal2->bitDepth ) return false;
-    return !(memcmp(pPal1->r, pPal2->r, 1 << pPal1->bitDepth) ||
-             memcmp(pPal1->g, pPal2->g, 1 << pPal1->bitDepth) ||
-             memcmp(pPal1->b, pPal2->b, 1 << pPal1->bitDepth));
+    return pPal1->bitDepth == pPal2->bitDepth &&
+           !memcmp(pPal1->colors, pPal2->colors, sizeof(GifRGBA) * (1 << pPal1->bitDepth));
 }
 
 // Update bestDiff and return true if color 'ind' is closer to r,g,b than bestDiff (and not transparent).
-bool GifBetterColorMatch(const GifPalette* pPal, int ind, int r, int g, int b, int& bestDiff)
+bool GifBetterColorMatch(const GifPalette* pPal, int ind, GifRGBA color, int& bestDiff)
 {
     if(ind == kGifTransIndex) return false;
 
-    int r_err = r - ((int32_t)pPal->r[ind]);
-    int g_err = g - ((int32_t)pPal->g[ind]);
-    int b_err = b - ((int32_t)pPal->b[ind]);
+    int r_err = color.r - (int)pPal->colors[ind].r;
+    int g_err = color.g - (int)pPal->colors[ind].g;
+    int b_err = color.b - (int)pPal->colors[ind].b;
     int diff = GifIAbs(r_err)+GifIAbs(g_err)+GifIAbs(b_err);
     if(diff >= bestDiff)
         return false;
@@ -153,7 +151,7 @@ bool GifBetterColorMatch(const GifPalette* pPal, int ind, int r, int g, int b, i
 // Takes as in/out parameters the current best color and its error -
 // only changes them if it finds a better color in its subtree.
 // this is the major hotspot in the code at the moment.
-void GifGetClosestPaletteColor(GifPalette* pPal, int r, int g, int b, int& bestInd, int& bestDiff, int treeRoot = 1)
+void GifGetClosestPaletteColor(GifPalette* pPal, GifRGBA color, int& bestInd, int& bestDiff, int treeRoot = 1)
 {
     GIF_STATS(stats.nodes++);
 
@@ -164,7 +162,7 @@ void GifGetClosestPaletteColor(GifPalette* pPal, int r, int g, int b, int& bestI
         int ind = treeRoot-(1<<pPal->bitDepth);
 
         // check whether this color is better than the current winner
-        if( GifBetterColorMatch(pPal, ind, r, g, b, bestDiff) )
+        if( GifBetterColorMatch(pPal, ind, color, bestDiff) )
             bestInd = ind;
         return;
     }
@@ -176,26 +174,25 @@ void GifGetClosestPaletteColor(GifPalette* pPal, int r, int g, int b, int& bestI
     }
 
     // take the appropriate color (r, g, or b) for this node of the k-d tree
-    int comps[3]; comps[0] = r; comps[1] = g; comps[2] = b;
-    int splitComp = comps[pPal->treeSplitElt[treeRoot]];
+    int splitComp = color.comps(pPal->treeSplitElt[treeRoot]);
 
     int splitPos = pPal->treeSplit[treeRoot];
     if(splitPos > splitComp)
     {
         // check the left subtree
-        GifGetClosestPaletteColor(pPal, r, g, b, bestInd, bestDiff, treeRoot*2);
+        GifGetClosestPaletteColor(pPal, color, bestInd, bestDiff, treeRoot*2);
         if( bestDiff > splitPos - splitComp )
         {
             // cannot prove there's not a better value in the right subtree, check that too
-            GifGetClosestPaletteColor(pPal, r, g, b, bestInd, bestDiff, treeRoot*2+1);
+            GifGetClosestPaletteColor(pPal, color, bestInd, bestDiff, treeRoot*2+1);
         }
     }
     else
     {
-        GifGetClosestPaletteColor(pPal, r, g, b, bestInd, bestDiff, treeRoot*2+1);
+        GifGetClosestPaletteColor(pPal, color, bestInd, bestDiff, treeRoot*2+1);
         if( bestDiff > splitComp - splitPos )
         {
-            GifGetClosestPaletteColor(pPal, r, g, b, bestInd, bestDiff, treeRoot*2);
+            GifGetClosestPaletteColor(pPal, color, bestInd, bestDiff, treeRoot*2);
         }
     }
 }
@@ -289,36 +286,31 @@ void GifSplitPalette(GifRGBA* image, int numPixels, int firstElt, int lastElt, i
             if( firstElt == 1 )
             {
                 // special case: the darkest color in the image
-                uint32_t r=255, g=255, b=255;
+                GifRGBA col = {255, 255, 255, 255};
                 for(int ii=0; ii<numPixels; ++ii)
                 {
-                    r = GifUI32Min(r, image[ii].r);
-                    g = GifUI32Min(g, image[ii].g);
-                    b = GifUI32Min(b, image[ii].b);
+                    col.r = GifUI8Min(col.r, image[ii].r);
+                    col.g = GifUI8Min(col.g, image[ii].g);
+                    col.b = GifUI8Min(col.b, image[ii].b);
                 }
 
-                pal->r[firstElt] = (uint8_t)r;
-                pal->g[firstElt] = (uint8_t)g;
-                pal->b[firstElt] = (uint8_t)b;
-
+                col.a = 0;
+                pal->colors[firstElt] = col;
                 return;
             }
 
             if( firstElt == (1 << pal->bitDepth)-1 )
             {
                 // special case: the lightest color in the image
-                uint32_t r=0, g=0, b=0;
+                GifRGBA col = {0, 0, 0, 0};
                 for(int ii=0; ii<numPixels; ++ii)
                 {
-                    r = GifUI32Max(r, image[ii].r);
-                    g = GifUI32Max(g, image[ii].g);
-                    b = GifUI32Max(b, image[ii].b);
+                    col.r = GifUI8Max(col.r, image[ii].r);
+                    col.g = GifUI8Max(col.g, image[ii].g);
+                    col.b = GifUI8Max(col.b, image[ii].b);
                 }
 
-                pal->r[firstElt] = (uint8_t)r;
-                pal->g[firstElt] = (uint8_t)g;
-                pal->b[firstElt] = (uint8_t)b;
-
+                pal->colors[firstElt] = col;
                 return;
             }
         }
@@ -340,9 +332,10 @@ void GifSplitPalette(GifRGBA* image, int numPixels, int firstElt, int lastElt, i
         g /= (uint32_t)numPixels;
         b /= (uint32_t)numPixels;
 
-        pal->r[firstElt] = (uint8_t)r;
-        pal->g[firstElt] = (uint8_t)g;
-        pal->b[firstElt] = (uint8_t)b;
+        GifRGBA& col = pal->colors[firstElt];
+        col.r = (uint8_t)r;
+        col.g = (uint8_t)g;
+        col.b = (uint8_t)b;
 
         return;
     }
@@ -436,8 +429,7 @@ void GifMakePalette( const GifRGBA* lastFrame, const GifRGBA* nextFrame, uint32_
     // add the bottom node for the transparency index
     pPal->treeSplit[1 << (bitDepth-1)] = 0;
     pPal->treeSplitElt[1 << (bitDepth-1)] = 0;
-
-    pPal->r[0] = pPal->g[0] = pPal->b[0] = 0;
+    pPal->colors[0] = {0, 0, 0, 0};
 }
 
 // Implements Floyd-Steinberg dithering, writes palette index to alpha
@@ -445,7 +437,7 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
 {
     int numPixels = (int)(width * height);
 
-    // quantPixels initially holds color*256 for all pixels
+    // quantPixels holds color*256 for all pixels; alpha channel ignored.
     // The extra 8 bits of precision allow for sub-single-color error values
     // to be propagated
     GifRGBA32* quantPixels = (GifRGBA32*)GIF_TEMP_MALLOC(sizeof(GifRGBA32) * (size_t)numPixels);
@@ -460,7 +452,8 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
     {
         for( uint32_t xx=0; xx<width; ++xx )
         {
-            GifRGBA32& nextPix = quantPixels[yy*width+xx];
+            GifRGBA32 nextPix = quantPixels[yy*width+xx];  // input
+            GifRGBA& outPix = outFrame[yy*width+xx];  // output
             const GifRGBA* lastPix = lastFrame? &lastFrame[yy*width+xx] : NULL;
 
             // Cap to within reasonable bounds, to prevent excessive bleeding.
@@ -471,21 +464,18 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
             nextPix.b = GifIMin( (255 + kGifAccumMargin) * 256, GifIMax( -kGifAccumMargin, nextPix.b ) );
 
             // Compute the colors we want (rounding to nearest)
-            int32_t rr = (nextPix.r + 127) / 256;
-            int32_t gg = (nextPix.g + 127) / 256;
-            int32_t bb = (nextPix.b + 127) / 256;
+            GifRGBA searchColor;
+            searchColor.r = (uint8_t)GifIMin(255, GifIMax(0, (nextPix.r + 127) / 256));
+            searchColor.g = (uint8_t)GifIMin(255, GifIMax(0, (nextPix.g + 127) / 256));
+            searchColor.b = (uint8_t)GifIMin(255, GifIMax(0, (nextPix.b + 127) / 256));
+            searchColor.a = 0;
 
             // if it happens that we want the color from last frame, then just write out
             // a transparent pixel
-            if( lastFrame &&
-               lastPix->r == rr &&
-               lastPix->g == gg &&
-               lastPix->b == bb )
+            if( lastFrame && GifRGBEqual(searchColor, *lastPix) )
             {
-                nextPix.r = (uint8_t)rr;
-                nextPix.g = (uint8_t)gg;
-                nextPix.b = (uint8_t)bb;
-                nextPix.a = kGifTransIndex;
+                outPix = searchColor;
+                outPix.a = kGifTransIndex;
                 continue;
             }
 
@@ -493,19 +483,17 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
             int32_t bestInd = kGifTransIndex;
 
             // Search the palete
-            GifGetClosestPaletteColor(pPal, rr, gg, bb, bestInd, bestDiff);
+            GifGetClosestPaletteColor(pPal, searchColor, bestInd, bestDiff);
             GIF_STATS(stats.searches++);
             GIF_STATS(stats.totaldiff += bestDiff);
 
             // Write the result to the temp buffer
-            int32_t r_err = (int32_t)nextPix.r - int32_t(pPal->r[bestInd]) * 256;
-            int32_t g_err = (int32_t)nextPix.g - int32_t(pPal->g[bestInd]) * 256;
-            int32_t b_err = (int32_t)nextPix.b - int32_t(pPal->b[bestInd]) * 256;
+            int32_t r_err = nextPix.r - (int32_t)pPal->colors[bestInd].r * 256;
+            int32_t g_err = nextPix.g - (int32_t)pPal->colors[bestInd].g * 256;
+            int32_t b_err = nextPix.b - (int32_t)pPal->colors[bestInd].b * 256;
 
-            nextPix.r = pPal->r[bestInd];
-            nextPix.g = pPal->g[bestInd];
-            nextPix.b = pPal->b[bestInd];
-            nextPix.a = (uint32_t)bestInd;
+            outPix = pPal->colors[bestInd];
+            outPix.a = bestInd;
 
             // Propagate the error to the four adjacent locations
             // that we haven't touched yet
@@ -548,12 +536,6 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
         }
     }
 
-    // Copy the palettized result to the output buffer
-    for( int ii=0; ii<numPixels*4; ++ii )
-    {
-        ((uint8_t*)outFrame)[ii] = (uint8_t)((int32_t*)quantPixels)[ii];
-    }
-
     GIF_TEMP_FREE(quantPixels);
 }
 
@@ -567,9 +549,7 @@ void GifThresholdImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifR
         // set the pixel to transparent
         if(lastFrame && GifRGBEqual(*lastFrame, *nextFrame))
         {
-            outFrame->r = lastFrame->r;
-            outFrame->g = lastFrame->g;
-            outFrame->b = lastFrame->b;
+            *outFrame = *lastFrame;
             outFrame->a = kGifTransIndex;
         }
         else
@@ -577,13 +557,12 @@ void GifThresholdImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifR
             // palettize the pixel
             int32_t bestDiff = 1000000;
             int32_t bestInd = 1;
-            GifGetClosestPaletteColor(pPal, nextFrame->r, nextFrame->g, nextFrame->b, bestInd, bestDiff);
+            GifGetClosestPaletteColor(pPal, *nextFrame, bestInd, bestDiff);
             GIF_STATS(stats.searches++);
             GIF_STATS(stats.totaldiff += bestDiff);
+
             // Write the resulting color to the output buffer
-            outFrame->r = pPal->r[bestInd];
-            outFrame->g = pPal->g[bestInd];
-            outFrame->b = pPal->b[bestInd];
+            *outFrame = pPal->colors[bestInd];
             outFrame->a = (uint8_t)bestInd;
         }
 
@@ -603,11 +582,11 @@ void GifDeltaImage( const GifRGBA* lastFrame, const uint8_t* nextFrame8, GifRGBA
     {
         // Not allowed to use kGifTransIndex, so remap it to nearest match
         int bestDiff = 1000000;
-        int r = pPal->r[kGifTransIndex], g = pPal->g[kGifTransIndex], b = pPal->b[kGifTransIndex];
+        GifRGBA col = pPal->colors[kGifTransIndex];
         for( int ind=0; ind<(1 << pPal->bitDepth); ++ind )
         {
             // check whether this color is better than the current winner
-            if( GifBetterColorMatch(pPal, ind, r, g, b, bestDiff) )
+            if( GifBetterColorMatch(pPal, ind, col, bestDiff) )
                 transReplacement = ind;
         }
     }
@@ -620,21 +599,14 @@ void GifDeltaImage( const GifRGBA* lastFrame, const uint8_t* nextFrame8, GifRGBA
 
         // if a previous color is available, and it matches the current color,
         // set the pixel to transparent
-        if(lastFrame &&
-           lastFrame->r == pPal->r[ind] &&
-           lastFrame->g == pPal->g[ind] &&
-           lastFrame->b == pPal->b[ind])
+        if(lastFrame && GifRGBEqual(*lastFrame, pPal->colors[ind]))
         {
-            outFrame->r = lastFrame->r;
-            outFrame->g = lastFrame->g;
-            outFrame->b = lastFrame->b;
+            *outFrame = *lastFrame;
             outFrame->a = kGifTransIndex;
         }
         else
         {
-            outFrame->r = pPal->r[ind];
-            outFrame->g = pPal->g[ind];
-            outFrame->b = pPal->b[ind];
+            *outFrame = pPal->colors[ind];
             outFrame->a = (uint8_t)ind;
         }
 
@@ -712,13 +684,10 @@ void GifWritePalette( const GifPalette* pPal, FILE* f )
     fputc(0, f);
     for(int ii=1; ii<(1 << pPal->bitDepth); ++ii)
     {
-        uint32_t r = pPal->r[ii];
-        uint32_t g = pPal->g[ii];
-        uint32_t b = pPal->b[ii];
-
-        fputc((int)r, f);
-        fputc((int)g, f);
-        fputc((int)b, f);
+        const GifRGBA &col = pPal->colors[ii];
+        fputc((int)col.r, f);
+        fputc((int)col.g, f);
+        fputc((int)col.b, f);
     }
 }
 
