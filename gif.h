@@ -262,7 +262,7 @@ int GifPartitionByMedian(GifRGBA* image, int com, int left, int right, int neede
         int centerRight = right;
         GifPartition(image, com, centerLeft, centerRight);
 
-        if( neededCenter <= centerLeft )
+        if( neededCenter < centerLeft )
             right = centerLeft;
         else if( neededCenter >= centerRight )
             left = centerRight;
