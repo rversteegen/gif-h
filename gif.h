@@ -197,7 +197,8 @@ void GifGetClosestPaletteColor(GifKDTree* tree, GifRGBA color, int& bestInd, int
     else
     {
         GifGetClosestPaletteColor(tree, color, bestInd, bestDiff, treeRoot*2+1);
-        if( bestDiff > comp - node.splitVal )
+        // The left subtree has component values <= (node.splitVal - 1)
+        if( bestDiff > comp - (node.splitVal - 1) )
         {
             GifGetClosestPaletteColor(tree, color, bestInd, bestDiff, treeRoot*2);
         }
@@ -212,12 +213,12 @@ void GifSwapPixels(GifRGBA* image, int pixA, int pixB)
 }
 
 // just the partition operation from quicksort 3-way
+// Center element used as pivot. Afterwards, the pixels in [left, right) have
+// 'com' component equal to the pivot; those before/after are lesser/greater.
 uint8_t GifPartition(GifRGBA* image, int com, int &left, int &right)
 {
     GifSwapPixels(image, left, left + (right - left) / 2);
     uint8_t comPivot = image[left].comps(com);
-    GifRGBA rgbPivot = image[left];
-    bool split = false;
     for(int i1=left+1; i1<right; ++i1)
     {
         uint8_t comArray = image[i1].comps(com);
@@ -231,24 +232,6 @@ uint8_t GifPartition(GifRGBA* image, int com, int &left, int &right)
             --right;
             GifSwapPixels(image, i1, right);
             --i1;
-        }
-        else
-        {
-            if( !GifRGBEqual(rgbPivot, image[i1]) )
-            {
-                if(split)
-                {
-                    GifSwapPixels(image, i1, left);
-                    ++left;
-                }
-                else
-                {
-                    --right;
-                    GifSwapPixels(image, i1, right);
-                    --i1;
-                }
-                split = !split;
-            }
         }
     }
     return comPivot;
@@ -274,7 +257,10 @@ int GifPartitionByMedian(GifRGBA* image, int com, uint8_t& pivotVal, int left, i
             // Never return initRight, would cause out-of-bounds read
             return centerLeft;
         else
+        {
+            ++pivotVal;
             return centerRight;
+        }
     }
     // This happens when neededCenter == left == right - 1
     return neededCenter;
