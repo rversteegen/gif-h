@@ -212,7 +212,7 @@ void GifSwapPixels(GifRGBA* image, int pixA, int pixB)
 }
 
 // just the partition operation from quicksort 3-way
-void GifPartition(GifRGBA* image, int com, int &left, int &right)
+uint8_t GifPartition(GifRGBA* image, int com, int &left, int &right)
 {
     GifSwapPixels(image, left, left + (right - left) / 2);
     uint8_t comPivot = image[left].comps(com);
@@ -251,26 +251,32 @@ void GifPartition(GifRGBA* image, int com, int &left, int &right)
             }
         }
     }
+    return comPivot;
 }
 
 // Perform an incomplete sort, finding all elements above and below the desired median
-int GifPartitionByMedian(GifRGBA* image, int com, int left, int right, int neededCenter)
+int GifPartitionByMedian(GifRGBA* image, int com, uint8_t& pivotVal, int left, int right, int neededCenter)
 {
+    int initLeft = left, initRight = right;
     while(left < right-1)
     {
-        int centerLeft = left;
-        int centerRight = right;
-        GifPartition(image, com, centerLeft, centerRight);
+        int centerLeft = left, centerRight = right;
+        pivotVal = GifPartition(image, com, centerLeft, centerRight);
+        // Pixels with com equal to pivotVal are now in the interval [centerLeft, centerRight)
 
         if( neededCenter < centerLeft )
             right = centerLeft;
         else if( neededCenter >= centerRight )
             left = centerRight;
-        else if( neededCenter - centerLeft < centerRight - neededCenter )
+        else if( centerLeft != initLeft && neededCenter - centerLeft <= centerRight - neededCenter ||
+                 centerRight == initRight )
+            // Found the median, but have to decide whether to put it in left or right partition.
+            // Never return initRight, would cause out-of-bounds read
             return centerLeft;
         else
             return centerRight;
     }
+    // This happens when neededCenter == left == right - 1
     return neededCenter;
 }
 
@@ -343,8 +349,7 @@ void GifSplitPalette(GifRGBA* image, int numPixels, int firstElt, int lastElt, i
     if(rRange > bRange && rRange > gRange) node.splitComp = offsetof(struct GifRGBA, r);
 
     int subPixelsA = numPixels * (splitElt - firstElt) / (lastElt - firstElt);
-    node.splitVal = image[subPixelsA].comps(node.splitComp);
-    subPixelsA = GifPartitionByMedian(image, node.splitComp, 0, numPixels, subPixelsA);
+    subPixelsA = GifPartitionByMedian(image, node.splitComp, node.splitVal,  numPixels, subPixelsA);
     int subPixelsB = numPixels - subPixelsA;
 
     GifSplitPalette(image,            subPixelsA, firstElt, splitElt, splitElt-splitDist, splitDist/2, treeNode*2,   buildForDither, tree);
