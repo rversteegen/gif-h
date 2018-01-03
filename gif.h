@@ -112,6 +112,13 @@ struct GifPalette
     GifRGBA colors[256];
 };
 
+struct GifHeapQueue {
+    int len = 0;
+    struct qitem {
+        int cost, nodeIndex;
+    } items[256];
+};
+
 struct GifKDNode {
     char splitComp;   // Color component index (dimension) to split on, or kGifNodeUnused
     uint8_t splitVal;
@@ -133,6 +140,45 @@ int GifIMin(int l, int r) { return l<r?l:r; }
 uint8_t GifUI8Max(uint8_t l, uint8_t r) { return l>r?l:r; }
 uint8_t GifUI8Min(uint8_t l, uint8_t r) { return l<r?l:r; }
 int GifIAbs(int i) { return i<0?-i:i; }
+
+void GifHeapPop( GifHeapQueue* q )
+{
+    GIF_ASSERT(q->len);
+
+    // We pop off the last element and look where to put it (don't resize yet)
+    int hole = 1;
+    --q->len;
+    GifHeapQueue::qitem *to_insert = &q->items[1 + q->len];
+
+    // Bubble up the hole from root until finding a spot to put to_insert
+    while( hole*2 < 1 + q->len )
+    {
+        // Find the largest child
+        int child = hole*2;  // left child
+        if( child + 1 < 1 + q->len && q->items[child + 1].cost > q->items[child].cost )
+            ++child;
+        if( to_insert->cost >= q->items[child].cost )
+            break;
+        q->items[hole] = q->items[child];
+        hole = child;
+    }
+    q->items[hole] = *to_insert;
+}
+
+void GifHeapPush( GifHeapQueue* q, int cost, int key )
+{
+    // Start from end and bubble down the value until its parent isn't larger
+    int hole = 1 + q->len;  // where to place
+    ++q->len;
+    GIF_ASSERT(q->len < 511);
+
+    while( hole > 1 && q->items[hole/2].cost < cost )
+    {
+        q->items[hole] = q->items[hole/2];
+        hole /= 2;
+    }
+    q->items[hole] = {cost, key};
+}
 
 bool GifRGBEqual( GifRGBA pixA, GifRGBA pixB )
 {
@@ -346,6 +392,7 @@ void GifSplitPalette(GifRGBA* image, int numPixels, int firstElt, int lastElt, i
     GifSplitPalette(image,            subPixelsA, firstElt, splitElt, splitElt-splitDist, splitDist/2, treeNode*2,   buildForDither, tree);
     GifSplitPalette(image+subPixelsA, subPixelsB, splitElt, lastElt,  splitElt+splitDist, splitDist/2, treeNode*2+1, buildForDither, tree);
 }
+
 
 // Finds all pixels that have changed from the previous image and
 // moves them to the front of the buffer.
