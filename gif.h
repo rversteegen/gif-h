@@ -33,6 +33,7 @@
 #ifndef gif_h
 #define gif_h
 
+#include <assert.h>
 #include <stdio.h>   // for FILE*
 #include <string.h>  // for memcpy and bzero
 #include <stdint.h>  // for integer typedefs
@@ -79,6 +80,9 @@ const uint8_t kGifNodeUnused = 4;
 // Define this to collect and print statistics about the quality of the palette
 //#define GIF_STATS(x)  x
 #define GIF_STATS(x)
+
+//#define GIF_ASSERT(x) assert(x)
+#define GIF_ASSERT(x)
 
 struct GifStats {
     int leaves, searches, totaldiff, cols, nodes;
@@ -258,6 +262,7 @@ int GifPartitionByMedian(GifRGBA* image, int com, uint8_t& pivotVal, int left, i
             return centerLeft;
         else
         {
+            GIF_ASSERT(pivotVal < 255);
             ++pivotVal;
             return centerRight;
         }
