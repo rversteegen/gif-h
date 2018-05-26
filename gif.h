@@ -23,12 +23,12 @@
 // You can freely mix 32-bit and 8-bit input frames and even frames with differing sizes.
 //
 // USAGE:
-// Create a GifWriter struct. Pass it to GifBegin() to initialize and write the header.
+// Allocate a GifWriter struct. Pass it to GifBegin() to initialize and write the header.
 // Pass subsequent frames to GifWriteFrame() or GifWriteFrame8().
 // Finally, call GifEnd() to close the file handle and free memory.
 //
-// A frame is of the type GifRGBA[width][height], aka uint8_t[width][height][4], such that
-//    frame[x][y] = [red, green, blue, alpha]
+// A frame is of the type GifRGBA[height][width], aka uint8_t[height][width][4], such that
+//    frame[y][x] = [red, green, blue, alpha]
 
 #ifndef gif_h
 #define gif_h
@@ -73,6 +73,7 @@
 
 const int kGifTransIndex = 0;
 
+// Amount of over/underflow of the accumulation buffer allowed. Should be 0 or greater.
 const int kGifAccumMargin = 64;
 
 const uint8_t kGifNodeUnused = 4;
@@ -301,7 +302,7 @@ int GifPartitionByMedian(GifRGBA* image, int com, uint8_t& pivotVal, int left, i
             right = centerLeft;
         else if( neededCenter >= centerRight )
             left = centerRight;
-        else if( centerLeft != initLeft && neededCenter - centerLeft <= centerRight - neededCenter ||
+        else if( (centerLeft != initLeft && neededCenter - centerLeft <= centerRight - neededCenter) ||
                  centerRight == initRight )
             // Found the median, but have to decide whether to put it in left or right partition.
             // Never return initRight, would cause out-of-bounds read
@@ -503,7 +504,7 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
             int32_t bestDiff = 1000000;
             int32_t bestInd = kGifTransIndex;
 
-            // Search the palete
+            // Search the palette
             GifGetClosestPaletteColor(tree, searchColor, bestInd, bestDiff);
             GIF_STATS(stats.searches++);
             GIF_STATS(stats.totaldiff += bestDiff);
@@ -642,7 +643,7 @@ struct GifBitStatus
 {
     uint8_t bitIndex;  // how many bits in the partial byte written so far
     uint8_t byte;      // current partial byte
-    
+
     uint32_t chunkIndex;
     uint8_t chunk[256];   // bytes are written in here until we have 256 of them, then written to the file
 };
@@ -912,7 +913,7 @@ bool GifBegin( GifWriter* writer, FILE *file, uint32_t width, uint32_t height, u
         // now the "global" palette (really just a dummy palette)
         // color 0: black
         fputc(0, writer->f);
-        fputc(0, writer->f); 
+        fputc(0, writer->f);
         fputc(0, writer->f);
         // color 1: also black
         fputc(0, writer->f);
