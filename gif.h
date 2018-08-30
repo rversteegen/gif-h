@@ -905,6 +905,15 @@ void GifHandleSizeChange( GifWriter* writer, int width, int height )
 {
     if(writer->currentWidth != width || writer->currentHeight != height)
     {
+        if(writer->currentWidth > width || writer->currentHeight > height)
+        {
+            // Change the disposal method for the previous frame, to erase the parts of
+            // the image outside the new image
+            long int pos = ftell(writer->f);
+            fseek(writer->f, writer->lastFramePos + 3, SEEK_SET);
+            fputc(0x09, writer->f); // replace this frame with the background
+            fseek(writer->f, pos, SEEK_SET);
+        }
         writer->maxWidth = GifIMax(writer->maxWidth, width);
         writer->maxHeight = GifIMax(writer->maxHeight, height);
         writer->currentWidth = width;
