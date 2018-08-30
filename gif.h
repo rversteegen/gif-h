@@ -313,7 +313,10 @@ int GifPartitionByMedian(GifRGBA* image, int com, uint8_t& pivotVal, int left, i
             return centerRight;
         }
     }
-    // This happens when neededCenter == left == right - 1
+    // This happens when neededCenter == left == right - 1. Those two pixels may or may not be equal
+    GIF_ASSERT(left > initLeft);
+    GIF_ASSERT(neededCenter == left);
+    pivotVal = image[left].comps(com);  // [left,initRight) is the right subtree
     return neededCenter;
 }
 
