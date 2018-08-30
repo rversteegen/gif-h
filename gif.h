@@ -287,9 +287,11 @@ uint8_t GifPartition(GifRGBA* image, int com, int &left, int &right)
 }
 
 // Perform an incomplete sort, finding all elements above and below the desired median
-int GifPartitionByMedian(GifRGBA* image, int com, uint8_t& pivotVal, int left, int right, int neededCenter)
+int GifPartitionByMedian(GifRGBA* image, int com, uint8_t& pivotVal, int left, int right)
 {
+    int neededCenter = left + (right - left) / 2;
     int initLeft = left, initRight = right;
+    GIF_ASSERT(left < right-1);
     while(left < right-1)
     {
         int centerLeft = left, centerRight = right;
@@ -418,17 +420,16 @@ int GifAddNode( GifKDTree* tree, GifRGBA* image, int firstPixel, int lastPixel )
     return nodeIndex;
 }
 
-// Split a leaf node in two. It must not be entirely one color.
+// Split a leaf node in two. It must not be entirely one color (splitting by splitComp must reduce cost).
 void GifSplitNode( GifRGBA* image, GifKDTree* tree, GifKDNode& node )
 {
-    int subPixelsA = node.firstPixel + (node.lastPixel - node.firstPixel) / 2;
-    subPixelsA = GifPartitionByMedian(image, node.splitComp, node.splitVal, node.firstPixel, node.lastPixel, subPixelsA);
+    int medianPixel = GifPartitionByMedian(image, node.splitComp, node.splitVal, node.firstPixel, node.lastPixel);
+    GIF_ASSERT(medianPixel > node.firstPixel);
+    GIF_ASSERT(medianPixel < node.lastPixel);
     GIF_ASSERT(node.splitVal > 0);
-    GIF_ASSERT(subPixelsA > node.firstPixel);
-    GIF_ASSERT(subPixelsA < node.lastPixel);
 
-    node.left = GifAddNode(tree, image, node.firstPixel, subPixelsA);
-    node.right = GifAddNode(tree, image, subPixelsA, node.lastPixel);
+    node.left = GifAddNode(tree, image, node.firstPixel, medianPixel);
+    node.right = GifAddNode(tree, image, medianPixel, node.lastPixel);
     node.isLeaf = false;
 }
 
@@ -444,8 +445,7 @@ void GifSplitPalette( GifRGBA* image, GifKDTree* tree )
 
         if( node.cost <= 0 )
             break;
-
-        GIF_ASSERT(tree->nodes[nodeIndex].lastPixel > tree->nodes[nodeIndex].firstPixel);
+        GIF_ASSERT(node.lastPixel > node.firstPixel + 1);  // At least two pixels
 
         GifHeapPop(&tree->queue);
         GifSplitNode(image, tree, node);
