@@ -656,7 +656,7 @@ void GifDeltaImage( const GifRGBA* lastFrame, const uint8_t* nextFrame8, GifRGBA
         for( int ind=0; ind<(1 << pPal->bitDepth); ++ind )
         {
             // check whether this color is better than the current winner
-            if( GifBetterColorMatch(pPal, ind, col, bestDiff) )
+            if( ind != kGifTransIndex && GifBetterColorMatch(pPal, ind, col, bestDiff) )
                 transReplacement = ind;
         }
     }
