@@ -24,4 +24,6 @@ Pass the struct to GifBegin() to initialize values and write the file header.
 
 Pass frames of the animation to GifWriteFrame() or GifWriteFrame8().
 
+If necessary, call GifOverwriteLastDelay() to set the correct delay after-the-fact.
+
 Finally, call GifEnd() to close the file handle and free memory.

@@ -25,6 +25,7 @@
 // USAGE:
 // Allocate a GifWriter struct. Pass it to GifBegin() to initialize and write the header.
 // Pass subsequent frames to GifWriteFrame() or GifWriteFrame8().
+// If necessary, call GifOverwriteLastDelay() to set the correct delay after-the-fact.
 // Finally, call GifEnd() to close the file handle and free memory.
 //
 // A frame is of the type GifRGBA[height][width], aka uint8_t[height][width][4], such that
@@ -896,6 +897,7 @@ struct GifWriter
     int currentWidth;
     int currentHeight;
     bool sizeChanged;
+    long int lastFramePos;
 };
 
 // Handle a call to GifWriteFrame[8] with a different image size to the previous
@@ -926,6 +928,7 @@ bool GifBegin( GifWriter* writer, FILE *file, uint32_t width, uint32_t height, u
 
     writer->firstFrame = true;
     writer->deltaCoded = !transparent;
+    writer->lastFramePos = -1;
 
     // allocate
     writer->oldImage = (GifRGBA*)GIF_MALLOC(width*height*sizeof(GifRGBA));
@@ -1024,6 +1027,7 @@ bool GifWriteFrame( GifWriter* writer, const GifRGBA* image, uint32_t width, uin
                1. * stats.totalLeafCost / tree.queue.len);
     );
 
+    writer->lastFramePos = ftell(writer->f);
     GifWriteLzwImage(writer->f, writer->oldImage, 0, 0, width, height, delay, &tree.pal, writer->deltaCoded, true);
 
     return true;
@@ -1054,9 +1058,22 @@ bool GifWriteFrame8( GifWriter* writer, const uint8_t* image, uint32_t width, ui
 
     GifDeltaImage(oldImage, image, writer->oldImage, width, height, writer->deltaCoded, pal);
 
+    writer->lastFramePos = ftell(writer->f);
     GifWriteLzwImage(writer->f, writer->oldImage, 0, 0, width, height, delay, pal, writer->deltaCoded, localPalette);
 
     return true;
+}
+
+// Change the delay for the last frame written
+void GifOverwriteLastDelay( GifWriter* writer, uint32_t delay )
+{
+    FILE* f = writer->f;
+    if(!f || writer->lastFramePos == -1) return;
+    long int pos = ftell(f);
+    fseek(f, writer->lastFramePos + 4, SEEK_SET);
+    fputc(delay & 0xff, f);
+    fputc((delay >> 8) & 0xff, f);
+    fseek(f, pos, SEEK_SET);
 }
 
 // Writes the EOF code, closes the file handle, and frees temp memory used by a GIF.
