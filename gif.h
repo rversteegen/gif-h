@@ -1024,7 +1024,6 @@ bool GifWriteFrame( GifWriter* writer, const GifRGBA* image, uint32_t width, uin
     writer->firstFrame = false;
 
     GifKDTree tree;
-    tree.queue.len = 0;
     GifMakePalette((dither? NULL : oldImage), image, width, height, bitDepth, dither, &tree);
 
     if(dither)
