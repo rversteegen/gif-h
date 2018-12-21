@@ -114,7 +114,7 @@ struct GifPalette
 };
 
 struct GifHeapQueue {
-    int len = 0;
+    int len;
     struct qitem {
         int cost, nodeIndex;
     } items[256];
@@ -184,7 +184,8 @@ void GifHeapPush( GifHeapQueue* q, int cost, int key )
         q->items[hole] = q->items[hole/2];
         hole /= 2;
     }
-    q->items[hole] = {cost, key};
+    q->items[hole].cost = cost;
+    q->items[hole].nodeIndex = key;
 }
 
 bool GifRGBEqual( GifRGBA pixA, GifRGBA pixB )
@@ -326,7 +327,10 @@ int GifPartitionByMedian(GifRGBA* image, int com, uint8_t& pivotVal, int left, i
 // Create the palette, by taking the average of all colors in each subcube (k-d tree leaf)
 void GifAverageColors(GifRGBA* image, GifKDTree* tree)
 {
-    tree->pal.colors[kGifTransIndex] = {0, 0, 0, 0};
+    tree->pal.colors[kGifTransIndex].r = 0;
+    tree->pal.colors[kGifTransIndex].g = 0;
+    tree->pal.colors[kGifTransIndex].b = 0;
+    tree->pal.colors[kGifTransIndex].a = 0;
 
     // Fill the rest of the palette with the leaf nodes. Nodes still on the queue are leaves
     int palIndex = 0;
@@ -1020,6 +1024,7 @@ bool GifWriteFrame( GifWriter* writer, const GifRGBA* image, uint32_t width, uin
     writer->firstFrame = false;
 
     GifKDTree tree;
+    tree.queue.len = 0;
     GifMakePalette((dither? NULL : oldImage), image, width, height, bitDepth, dither, &tree);
 
     if(dither)
