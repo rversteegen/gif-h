@@ -80,8 +80,11 @@ const int kGifAccumMargin = 64;
 //#define GIF_STATS(x)  x
 #define GIF_STATS(x)
 
-//#define GIF_ASSERT(x) assert(x)
 #define GIF_ASSERT(x) (void)0
+#ifndef GIF_ASSERT
+#include <assert.h>
+#define GIF_ASSERT assert
+#endif
 
 struct GifStats {
     int leaves, searches, totalDiff, nodes, totalLeafCost, maxLeafCost, maxLeafSize, maxLeafRange;
@@ -120,8 +123,8 @@ struct GifHeapQueue {
 };
 
 struct GifKDNode {
-    char splitComp : 7;        // Color component index (dimension) to split on (actually member offset)
-    char isLeaf : 1;
+    uint8_t splitComp : 7;     // Color component index (dimension) to split on (actually member offset)
+    uint8_t isLeaf : 1;
     uint8_t palIndex;          // Leaf nodes only
     // The following are not used (and are uninitialised) in leaf nodes
     uint8_t splitVal;          // If the component color is >= this, it's in the right subtree.
