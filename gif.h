@@ -77,7 +77,7 @@ const int kGifTransIndex = 0;
 // Can be set above 256, but don't go much higher.
 // Set to a low value like 64 to minimise color bleeding, or a very
 // low value like 16 to reduce the amount of dithering and noise.
-const int kGifMaxAccumError = 256;
+int kGifMaxAccumError = 50;
 
 // Define this to collect and print statistics about the quality of the palette
 //#define GIF_STATS(x)  x
@@ -96,7 +96,7 @@ struct GifStats {
 // Layout of a pixel for GifWriteFrame. You can reorder this, but must be the same as GifRGBA32.
 struct GifRGBA
 {
-    uint8_t r, g, b, a;
+    uint8_t b, g, r, a;
 
     uint8_t& comps(int comp)
     {
@@ -106,7 +106,7 @@ struct GifRGBA
 
 struct GifRGBA32
 {
-    int32_t r, g, b, a;
+    int32_t b, g, r, a;
 };
 
 struct GifPalette
@@ -114,7 +114,7 @@ struct GifPalette
     int bitDepth;  // log2 of the possible number of colors
     //int numColors; // The number of colors actually used (including kGifTransIndex)
 
-    // alpha component is ignored
+    // alpha component is ignored; holds the original palette index when built from a palette.
     GifRGBA colors[256];
 };
 
@@ -238,8 +238,8 @@ void GifGetClosestPaletteColor(GifKDTree* tree, GifRGBA color, int& bestInd, int
 
     GIF_STATS(++stats.nodes;)
 
-    // r g b -> 2 4 3
-    int comp_mult = (0x030402 >> (node.splitComp << 8)) & 0xff;
+    // b g r -> 3 4 2
+    int comp_mult = (0x020403 >> (node.splitComp << 8)) & 0xff;
 
     // Compare to the appropriate color component (r, g, or b) for this node of the k-d tree
     int comp = color.comps(node.splitComp);
@@ -381,6 +381,8 @@ void GifAverageColors(GifRGBA* image, GifKDTree* tree)
         col.r = (uint8_t)r;
         col.g = (uint8_t)g;
         col.b = (uint8_t)b;
+        // When building a k-d tree with a fixed palette col.a is the original palette index, otherwise it's garbage
+        col.a = image[node.firstPixel].a;
         node.palIndex = palIndex;
     }
     //tree->pal.numColors = GifIMax(palIndex, kGifTransIndex + 1);
