@@ -73,8 +73,11 @@
 
 const int kGifTransIndex = 0;
 
-// Amount of over/underflow of the accumulation buffer allowed. Should be 0 or greater.
-const int kGifAccumMargin = 64;
+// Maximum amount of accumulated diffused error in each color component, for F-S dithering.
+// Can be set above 256, but don't go much higher.
+// Set to a low value like 64 to minimise color bleeding, or a very
+// low value like 16 to reduce the amount of dithering and noise.
+const int kGifMaxAccumError = 256;
 
 // Define this to collect and print statistics about the quality of the palette
 //#define GIF_STATS(x)  x
@@ -521,37 +524,34 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
 {
     int numPixels = (int)(width * height);
 
-    // quantPixels holds color*256 for all pixels; alpha channel ignored.
+    // errorPixels holds the accumulated error for each pixel; alpha channel ignored.
     // The extra 8 bits of precision allow for sub-single-color error values
     // to be propagated
-    GifRGBA32* quantPixels = (GifRGBA32*)GIF_TEMP_MALLOC(sizeof(GifRGBA32) * (size_t)numPixels);
-
-    for( int ii=0; ii<numPixels*4; ++ii )
-    {
-        uint8_t pix = ((uint8_t*)nextFrame)[ii];
-        ((int32_t*)quantPixels)[ii] = int32_t(pix) * 256;
-    }
+    GifRGBA32* errorPixels = (GifRGBA32*)GIF_TEMP_MALLOC(sizeof(GifRGBA32) * (size_t)numPixels);
+    memset(errorPixels, 0, sizeof(GifRGBA32) * (size_t)numPixels);
 
     for( uint32_t yy=0; yy<height; ++yy )
     {
         for( uint32_t xx=0; xx<width; ++xx )
         {
-            GifRGBA32 nextPix = quantPixels[yy*width+xx];  // input
+            GifRGBA nextPix = nextFrame[yy*width+xx];  // input
+            GifRGBA32 errorPix = errorPixels[yy*width+xx];  // input
             GifRGBA& outPix = outFrame[yy*width+xx];  // output
             const GifRGBA* lastPix = lastFrame? &lastFrame[yy*width+xx] : NULL;
 
-            // Cap to within reasonable bounds, to prevent excessive bleeding.
-            // But it seems permissible to keep some additional error beyond
-            // what can be corrected by a single pixel.
-            nextPix.r = GifIMin( (255 + kGifAccumMargin) * 256, GifIMax( -kGifAccumMargin, nextPix.r ) );
-            nextPix.g = GifIMin( (255 + kGifAccumMargin) * 256, GifIMax( -kGifAccumMargin, nextPix.g ) );
-            nextPix.b = GifIMin( (255 + kGifAccumMargin) * 256, GifIMax( -kGifAccumMargin, nextPix.b ) );
+            // Cap the diffused error to prevent excessive bleeding.
+            errorPix.r = GifIMin( kGifMaxAccumError * 256, GifIMax( -kGifMaxAccumError * 256, errorPix.r) );
+            errorPix.g = GifIMin( kGifMaxAccumError * 256, GifIMax( -kGifMaxAccumError * 256, errorPix.g) );
+            errorPix.b = GifIMin( kGifMaxAccumError * 256, GifIMax( -kGifMaxAccumError * 256, errorPix.b) );
+            errorPix.r += (int32_t)nextPix.r * 256;
+            errorPix.g += (int32_t)nextPix.g * 256;
+            errorPix.b += (int32_t)nextPix.b * 256;
 
             // Compute the colors we want (rounding to nearest)
             GifRGBA searchColor;
-            searchColor.r = (uint8_t)GifIMin(255, GifIMax(0, (nextPix.r + 127) / 256));
-            searchColor.g = (uint8_t)GifIMin(255, GifIMax(0, (nextPix.g + 127) / 256));
-            searchColor.b = (uint8_t)GifIMin(255, GifIMax(0, (nextPix.b + 127) / 256));
+            searchColor.r = (uint8_t)GifIMin(255, GifIMax(0, (errorPix.r + 127) / 256));
+            searchColor.g = (uint8_t)GifIMin(255, GifIMax(0, (errorPix.g + 127) / 256));
+            searchColor.b = (uint8_t)GifIMin(255, GifIMax(0, (errorPix.b + 127) / 256));
             searchColor.a = 0;
 
             // if it happens that we want the color from last frame, then just write out
@@ -575,9 +575,9 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
             outPix = tree->pal.colors[bestInd];
             outPix.a = bestInd;
 
-            int32_t r_err = nextPix.r - (int32_t)outPix.r * 256;
-            int32_t g_err = nextPix.g - (int32_t)outPix.g * 256;
-            int32_t b_err = nextPix.b - (int32_t)outPix.b * 256;
+            int32_t r_err = errorPix.r - outPix.r * 256;
+            int32_t g_err = errorPix.g - outPix.g * 256;
+            int32_t b_err = errorPix.b - outPix.b * 256;
 
             // Propagate the error to the four adjacent locations
             // that we haven't touched yet
@@ -588,7 +588,7 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
 
             if(quantloc_7 < numPixels)
             {
-                GifRGBA32& pix7 = quantPixels[quantloc_7];
+                GifRGBA32& pix7 = errorPixels[quantloc_7];
                 pix7.r += r_err * 6 / 16;
                 pix7.g += g_err * 6 / 16;
                 pix7.b += b_err * 6 / 16;
@@ -596,7 +596,7 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
 
             if(quantloc_3 < numPixels)
             {
-                GifRGBA32& pix3 = quantPixels[quantloc_3];
+                GifRGBA32& pix3 = errorPixels[quantloc_3];
                 pix3.r += r_err * 3 / 16;
                 pix3.g += g_err * 3 / 16;
                 pix3.b += b_err * 3 / 16;
@@ -604,7 +604,7 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
 
             if(quantloc_5 < numPixels)
             {
-                GifRGBA32& pix5 = quantPixels[quantloc_5];
+                GifRGBA32& pix5 = errorPixels[quantloc_5];
                 pix5.r += r_err * 4 / 16;
                 pix5.g += g_err * 4 / 16;
                 pix5.b += b_err * 4 / 16;
@@ -612,7 +612,7 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
 
             if(quantloc_1 < numPixels)
             {
-                GifRGBA32& pix1 = quantPixels[quantloc_1];
+                GifRGBA32& pix1 = errorPixels[quantloc_1];
                 pix1.r += r_err / 16;
                 pix1.g += g_err / 16;
                 pix1.b += b_err / 16;
@@ -620,7 +620,7 @@ void GifDitherImage( const GifRGBA* lastFrame, const GifRGBA* nextFrame, GifRGBA
         }
     }
 
-    GIF_TEMP_FREE(quantPixels);
+    GIF_TEMP_FREE(errorPixels);
 }
 
 // Picks palette colors for the image using simple thresholding, no dithering. Writes palette index to alpha.
