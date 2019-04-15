@@ -111,7 +111,7 @@ struct GifPalette
     int bitDepth;  // log2 of the possible number of colors
     //int numColors; // The number of colors actually used (including kGifTransIndex)
 
-    // alpha component should be set to 0
+    // alpha component is ignored
     GifRGBA colors[256];
 };
 
@@ -208,7 +208,7 @@ bool GifBetterColorMatch(const GifPalette* pPal, int ind, GifRGBA color, int& be
     int r_err = color.r - (int)pPal->colors[ind].r;
     int g_err = color.g - (int)pPal->colors[ind].g;
     int b_err = color.b - (int)pPal->colors[ind].b;
-    int diff = GifIAbs(r_err)+GifIAbs(g_err)+GifIAbs(b_err);
+    int diff = 2*r_err*r_err + 4*g_err*g_err + 3*b_err*b_err;
     if(diff >= bestDiff)
         return false;
     bestDiff = diff;
@@ -235,13 +235,17 @@ void GifGetClosestPaletteColor(GifKDTree* tree, GifRGBA color, int& bestInd, int
 
     GIF_STATS(++stats.nodes;)
 
+    // r g b -> 2 4 3
+    int comp_mult = (0x030402 >> (node.splitComp << 8)) & 0xff;
+
     // Compare to the appropriate color component (r, g, or b) for this node of the k-d tree
     int comp = color.comps(node.splitComp);
     if(node.splitVal > comp)
     {
         // check the left subtree
         GifGetClosestPaletteColor(tree, color, bestInd, bestDiff, node.left);
-        if( bestDiff > node.splitVal - comp )
+        int cmpdiff = node.splitVal - comp;
+        if( bestDiff > comp_mult * cmpdiff*cmpdiff )
         {
             // cannot prove there's not a better value in the right subtree, check that too
             GifGetClosestPaletteColor(tree, color, bestInd, bestDiff, node.right);
@@ -251,7 +255,8 @@ void GifGetClosestPaletteColor(GifKDTree* tree, GifRGBA color, int& bestInd, int
     {
         GifGetClosestPaletteColor(tree, color, bestInd, bestDiff, node.right);
         // The left subtree has component values <= (node.splitVal - 1)
-        if( bestDiff > comp - (node.splitVal - 1) )
+        int cmpdiff = comp - (node.splitVal - 1);
+        if( bestDiff > comp_mult * cmpdiff*cmpdiff )
         {
             GifGetClosestPaletteColor(tree, color, bestInd, bestDiff, node.left);
         }
